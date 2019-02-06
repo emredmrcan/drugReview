@@ -115,6 +115,8 @@ descOrderByColumn <- function(data,newColumnName){
 ##-------------------------------------------------------------------------------------------------------
 ##-------------------------------------------------------------------------------------------------------
 ##-------------------------------------------------------------------------------------------------------
+trainData3 <- trainData2
+getAccuracy(trainData3)
 ##--------------------------------------------------------K FOLD CROSS VALIDATION
 k_fold_cv <- function(data){
   k=10
@@ -131,17 +133,90 @@ getAccuracy <- function(data){
     eachFold <- folds[i]
     trainingSet <- folds[-i]
     testSet<- folds[i]
-    predictedValues <- decisionTree(trainingSet,testSet)
+    trainingSetDF <- data.frame()
+    testSetDF <- data.frame()
+    for (j in 1:length(trainingSet)) {
+      trainingSetDF <- rbind(trainingSetDF,trainingSet[[j]])
+    }
+    testSetDF<- rbind(testSetDF,testSet[[1]])
+    remove(trainingSet)
+    remove(testSet)
+    #predictedValues <- decisionTree(trainingSetDF,testSetDF)
   }
 }
 ##-------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------Decision Tree
 decisionTree <- function(trainDataSet,testDataSet){
-  root <- split
+  #root <- split(trainDataSet)
+  root <- split(trainingSetDF)
+  
+}
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------Split
+split <- function(data){
+  targetValues <- unique(data$ave_sentiment)
+  node_index <- 999
+  node_value <- 999
+  node_score <- 999
+  node_groups <- list()
+  data <- trainingSetDF
+  for (index in 1:(length(data)-1)) {
+    count <- 0
+    count_row <- 0
+    for (i in 1:length(data[,1])) {
+      count <- count + 1
+      count_row <- as.integer(data[i,index]) + count_row
+    }
+    count_row <- count_row / count
+    groups <- testSplit(index, count_row, data)
+    gini_value = getGiniIndex(groups, targetValues)
+    if(gini_value < node_score){
+      node_index<-index
+      node_value<- as.integer(data[i,index])
+      node_score<-gini_value
+      node_groups<-groups
+    }
+  }
+  return(list("i"=node_index,"value"=node_value,"div"=node_groups))
+}
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------Test Split
+testSplit <- function(index,value, data){
+  left<-list()
+  right<-list()
+  for (i in 1:length(data[,1])) {
+    if(as.integer(data[i,index]) < value){
+      left <- rbind(left,data[i,])
+    }
+    else{
+      right <- rbind(right,data[i,])
+    }
+  }
+  return(list(left,right))
 }
 
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------Gini
+getGiniIndex <- function(groups,targetValues){
+  giniIndexValue <- 0
+  for (i in 1:length(targetValues)) {
+    for (j in 1:length(groups)) {
+      number <- 0
+      size <- length(groups[[j]][,1])
+      if(size==0){
+        next
+      }
+      number <- length(groups[[j]][which(groups[[j]][,3]==targetValues[i]),][,1])
+      ratio <- number / size
+      giniIndexValue <- giniIndexValue + (ratio * (1-ratio))
+    }
+  }
+  return(giniIndexValue)
+}
 
+#--------------------------------------------------------------------------------------------------------
 
-
-
-
+unique(trainingSetDF$ave_sentiment)
+#rbind(trainingSet[[1]],trainingSet[[2]])
+#folds[[1]][1:10,2]
+length(groups[[1]][which(groups[[1]][,3]==targetValues[2]),][,1])
