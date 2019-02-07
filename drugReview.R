@@ -1,16 +1,17 @@
-# install.packages("sentimentr")
-# install.packages("dplyr")
+#install.packages("sentimentr")
+#install.packages("dplyr")
 #install.packages("e1071")
 #install.packages("stringi")
 #install.packages("reticulate")
 #install.packages("rlist")
+#install.packages("data.table")
+#install.packages("rpart")
 
 library(sentimentr)
 library(dplyr)
 library(e1071)
 library(data.table)
 library(rpart)
-library(neuralnet)
 library(reticulate)
 library(rlist)
 
@@ -83,22 +84,40 @@ trainData2 <- trainData2[-which(trainData2$ave_sentiment==0),]
 
 trainData2 <- trainData2[which((trainData2$ave_sentiment==1 & trainData2$rating > 5) | (trainData2$ave_sentiment==-1 & trainData2$rating < 6)),]
 trainData2 <- within(trainData2, rm("usefulCount","rating"))
-write.csv(trainData3,'newTrainData.csv')
+write.csv(trainData2,'cleanedData.csv')
 
-##------------------------------------DT-----------------------------------
-# fit <- rpart(ave_sentiment~., data = trainData2[1:10000,], method = 'class')
-# predict_unseen <-predict(fit, trainData2[1:1000,1:2], type = 'class')
-# table_mat <- table(trainData2[1:1000,3], predict_unseen)
+##------------------------------------DT-------------------------------------------------------
+fit <- rpart(ave_sentiment~., data = trainData2[1:1000,], method = 'class')
+predict_unseen <-predict(fit, trainData2[1:1000,1:2], type = 'class')
+table_mat <- table(trainData2[1:1000,3], predict_unseen)
+table_mat
+accuracyRpartAlgorithm <- (table_mat[1,1]+table_mat[2,2])/(table_mat[1,1]+table_mat[1,2]+table_mat[2,1]+table_mat[2,2])
+cat("Accuracy Result for Rpart Algorithm : ",accuracyRpartAlgorithm)
+##---------------------------------------------------------------------------------------------
+##------------------------------------SVM------------------------------------------------------
+# fit <- svm(ave_sentiment~., data = trainData2[1:1000,])
+# predict <-predict(fit, trainData2[1:1000,])
+# table_mat <- table(trainData2[1:1000,3],predict)
 # table_mat
-##------------------------------------SVM-----------------------------------
-# fit <- svm(ave_sentiment~., data = trainData2)
-# predict <-predict(fit, trainData2[1:11,1:2])
-# table_mat <- table(predict,trainData2[1:11,3])
-# table_mat
-##--------------------------------------------------------------------------
-## nn <- neuralnet(ave_sentiment ~ drugName + condition,data = trainData2,hidden=4,stepmax = 1e8,threshold = 0.001,learningrate = 0.001,linear.output=FALSE, act.fct ="logistic")
+##----------------------------------------------------------------------------------------------
+##------------------------------------My Own DT Implementation----------------------------------
 
-##-------------------------------------------------------------------------------------------------------
+maxDepth <- 10
+minSize <- 5
+k<-10
+sumAccuracy <- 0
+scores <- getAccuracy(trainData2[1:1000,])
+
+for (i in 1:length(scores)) {
+  sumAccuracy <- sumAccuracy + scores[[i]]
+}
+meanAccuracy<-sumAccuracy/length(scores)
+cat("Mean Accuracy Result for 10 fold CV : ",meanAccuracy)
+##----------------------------------------------------------------------------------------------
+
+#########################################--------------------  FUNCTIONS  -----------------######################################################
+
+##--------------------------------------------------------Order By Given Column
 descOrderByColumn <- function(data,newColumnName){
   orderedData <- data %>%
     group_by(columnName) %>%
@@ -110,17 +129,9 @@ descOrderByColumn <- function(data,newColumnName){
   return(orderedData)
 }
 ##-------------------------------------------------------------------------------------------------------
-##-------------------------------------------------------------------------------------------------------
-##-------------------------------------------------------------------------------------------------------
-trainData3 <- trainData2
-maxDepth = 10
-minSize = 5
-
-getAccuracy(trainData3)
 ##--------------------------------------------------------K FOLD CROSS VALIDATION
 k_fold_cv <- function(data){
-  k=10
-  data <- trainData3[sample(nrow(trainData3)),] 
+  data <- data[sample(nrow(data)),] 
   nr <- nrow(data)
   eachFold <- split(data, rep(1:ceiling(nr/k), each=nr/k, length.out=nr))
   return(eachFold[1:10])
@@ -128,7 +139,8 @@ k_fold_cv <- function(data){
 ##-------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------get Accuracy
 getAccuracy <- function(data){
-  folds <- k_fold_cv(trainData3)
+  scores<-list()
+  folds <- k_fold_cv(data)
   for (i in 1:length(folds)) {
     eachFold <- folds[i]
     trainingSet <- folds[-i]
@@ -141,38 +153,32 @@ getAccuracy <- function(data){
     testSetDF<- rbind(testSetDF,testSet[[1]])
     remove(trainingSet)
     remove(testSet)
-    #predictedValues <- decisionTree(trainingSetDF,testSetDF)
+    predictedValues <- decisionTree(trainingSetDF,testSetDF)
+    count <- 0
+    for (i in 1:length(predictedValues)) {
+      if(predictedValues[[1]]==testSetDF[i,3]){
+        count <- count + 1
+      }
+    }
+    scores <- c(scores,(count/length(predictedValues)))
   }
+  return(scores)
 }
 ##-------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------Decision Tree
 decisionTree <- function(trainDataSet,testDataSet){
-  #root <- split(trainDataSet)
-  root3 <- split(trainingSetDF)
-   root3 <- root
-   root3$div[[1]] <- root3$div[[1]][1:200,]
-   root3$div[[2]] <- root3$div[[2]][1:100,]
-  root2<-rootSplit(root3,1)
+  root <- splitFunc(trainDataSet)
+  root<-rootSplit(root,1)
   predictions <- list()
-  for (i in 1:100) { #length(testDataSet[,1])
-    prediction = output_from_tree(root2,testSetDF[i,])    #testDataSet[i,])
-    if(is.null(prediction)){
-      browser()
-      print("asd")
-    }
+  for (i in 1:length(testDataSet[,1])) { 
+    prediction <- output_from_tree(root,testDataSet[i,])
     predictions <- c(predictions,prediction)
   }
-  # count <- 0
-  # for (i in 1:length(predictions)) {
-  #   if(predictions[[1]]==testSetDF[i,3]){
-  #     count <- count + 1
-  #   }
-  # }
   return(predictions)
 }
 #--------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------Split
-split <- function(data){
+splitFunc <- function(data){
   targetValues <- unique(data$ave_sentiment)
   node_index <- 999
   node_value <- 999
@@ -266,7 +272,7 @@ rootSplit <- function(root,depth){
     if(lengthLeft <= minSize){
       root$left<- terminalNode(left)
     }else{
-      root$left <- split(as.data.frame(left))
+      root$left <- splitFunc(as.data.frame(left))
       root$left <- rootSplit(root$left,depth+1)
     }
     if(length(right) != 0){
@@ -277,7 +283,7 @@ rootSplit <- function(root,depth){
     if(lengthRight <= minSize){
       root$right<- terminalNode(right)
     }else{
-      root$right <- split(as.data.frame(right))
+      root$right <- splitFunc(as.data.frame(right))
       root$right <- rootSplit(root$right,depth+1)
     }
   return(root)
@@ -300,7 +306,7 @@ terminalNode <- function(group){
 #--------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------output_from_tree
 output_from_tree <- function(root,row){
-  if(is.null(root)){
+  if(is.null(root) || length(root)==1){
     return(1)
   }
   else if(is.null(root$left) && is.null(root$right) ){
@@ -317,16 +323,15 @@ output_from_tree <- function(root,row){
       }
     }
   }else{
-    if(typeof(root$right) == "list"){
-      return(output_from_tree(root$right,row))
+    if(is.null(root$right)){
+      return(output_from_tree(root$left,row))
     }else{
-      return(root$right)
+      if(typeof(root$right) == "list"){
+        return(output_from_tree(root$right,row))
+      }else{
+        return(root$right)
+      }
     }
   }
 }
 #--------------------------------------------------------------------------------------------------------
-
-unique(trainingSetDF$ave_sentiment)
-#rbind(trainingSet[[1]],trainingSet[[2]])
-#folds[[1]][1:10,2]
-length(groups[[1]][which(groups[[1]][,3]==targetValues[2]),][,1])
