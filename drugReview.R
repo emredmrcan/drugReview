@@ -3,6 +3,8 @@
 #install.packages("e1071")
 #install.packages("stringi")
 #install.packages("reticulate")
+#install.packages("rlist")
+
 library(sentimentr)
 library(dplyr)
 library(e1071)
@@ -10,6 +12,8 @@ library(data.table)
 library(rpart)
 library(neuralnet)
 library(reticulate)
+library(rlist)
+
 #read the data from file
 trainData <- read.csv("drugsComTrain_raw/drugsComTrain_raw.csv", header=T,  sep = ",")
 #testData <- read.csv("drugsComTest_raw/drugsComTest_raw.csv", header=T,  sep = ",")
@@ -79,14 +83,7 @@ trainData2 <- trainData2[-which(trainData2$ave_sentiment==0),]
 
 trainData2 <- trainData2[which((trainData2$ave_sentiment==1 & trainData2$rating > 5) | (trainData2$ave_sentiment==-1 & trainData2$rating < 6)),]
 trainData2 <- within(trainData2, rm("usefulCount","rating"))
-write.csv(trainData2,'newTrainData.csv')
-
-source_python('deneme2.py')
-
-dataset <-data('newTrainData.csv')
-scores <- calculate_accuracy(dataset[])
-cat("Accuracy : ",mean(scores))
-
+write.csv(trainData3,'newTrainData.csv')
 
 ##------------------------------------DT-----------------------------------
 # fit <- rpart(ave_sentiment~., data = trainData2[1:10000,], method = 'class')
@@ -116,6 +113,9 @@ descOrderByColumn <- function(data,newColumnName){
 ##-------------------------------------------------------------------------------------------------------
 ##-------------------------------------------------------------------------------------------------------
 trainData3 <- trainData2
+maxDepth = 10
+minSize = 5
+
 getAccuracy(trainData3)
 ##--------------------------------------------------------K FOLD CROSS VALIDATION
 k_fold_cv <- function(data){
@@ -148,8 +148,27 @@ getAccuracy <- function(data){
 ##--------------------------------------------------------Decision Tree
 decisionTree <- function(trainDataSet,testDataSet){
   #root <- split(trainDataSet)
-  root <- split(trainingSetDF)
-  
+  root3 <- split(trainingSetDF)
+   root3 <- root
+   root3$div[[1]] <- root3$div[[1]][1:200,]
+   root3$div[[2]] <- root3$div[[2]][1:100,]
+  root2<-rootSplit(root3,1)
+  predictions <- list()
+  for (i in 1:100) { #length(testDataSet[,1])
+    prediction = output_from_tree(root2,testSetDF[i,])    #testDataSet[i,])
+    if(is.null(prediction)){
+      browser()
+      print("asd")
+    }
+    predictions <- c(predictions,prediction)
+  }
+  # count <- 0
+  # for (i in 1:length(predictions)) {
+  #   if(predictions[[1]]==testSetDF[i,3]){
+  #     count <- count + 1
+  #   }
+  # }
+  return(predictions)
 }
 #--------------------------------------------------------------------------------------------------------
 ##--------------------------------------------------------Split
@@ -159,7 +178,6 @@ split <- function(data){
   node_value <- 999
   node_score <- 999
   node_groups <- list()
-  data <- trainingSetDF
   for (index in 1:(length(data)-1)) {
     count <- 0
     count_row <- 0
@@ -202,7 +220,12 @@ getGiniIndex <- function(groups,targetValues){
   for (i in 1:length(targetValues)) {
     for (j in 1:length(groups)) {
       number <- 0
-      size <- length(groups[[j]][,1])
+      if(length(groups[[j]]) != 0){
+        size <- length(groups[[j]][,1])
+      }
+      else{
+        size <- 0
+      }
       if(size==0){
         next
       }
@@ -214,6 +237,93 @@ getGiniIndex <- function(groups,targetValues){
   return(giniIndexValue)
 }
 
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------Node Split
+rootSplit <- function(root,depth){
+  left <- root$div[[1]]
+  right <- root$div[[2]]
+  root <- list.remove(root,'div')
+    if(length(left)==0){
+      root$left<- -1
+      root$right<- 1
+      return()
+    }
+    if(length(right)==0){
+      root$left<- 1
+      root$right<- -1
+      return()
+    }
+    if(depth>=maxDepth){
+      root$left<- terminalNode(left)
+      root$right<- terminalNode(right)
+      return()
+    }
+    if(length(left)!=0){
+      lengthLeft<- length(left[,1])
+    }else{
+      lengthLeft<- 0
+    }
+    if(lengthLeft <= minSize){
+      root$left<- terminalNode(left)
+    }else{
+      root$left <- split(as.data.frame(left))
+      root$left <- rootSplit(root$left,depth+1)
+    }
+    if(length(right) != 0){
+      lengthRight<- length(right[,1])
+    }else{
+      lengthRight<- 0
+    }
+    if(lengthRight <= minSize){
+      root$right<- terminalNode(right)
+    }else{
+      root$right <- split(as.data.frame(right))
+      root$right <- rootSplit(root$right,depth+1)
+    }
+  return(root)
+}
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------Terminal Node
+terminalNode <- function(group){
+  outcomes <- group[,3]
+  classify <- c(0,0)
+  classify[1]<- length(which(group[,3]==-1))
+  classify[2]<- length(which(group[,3]==1))
+  if(classify[1] > classify[2]){
+    return(-1)
+  }
+  else{
+    return(1)
+  }
+}
+#--------------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------
+##--------------------------------------------------------output_from_tree
+output_from_tree <- function(root,row){
+  if(is.null(root)){
+    return(1)
+  }
+  else if(is.null(root$left) && is.null(root$right) ){
+    return(1)
+  }
+  else if(as.integer(row[,as.integer(root$i)])<as.integer(root$value)){
+    if(is.null(root$left)){
+      return(output_from_tree(root$right,row))
+    }else{
+      if(typeof(root$left) == "list"){
+        return(output_from_tree(root$left,row))
+      }else{
+        return(root$left)
+      }
+    }
+  }else{
+    if(typeof(root$right) == "list"){
+      return(output_from_tree(root$right,row))
+    }else{
+      return(root$right)
+    }
+  }
+}
 #--------------------------------------------------------------------------------------------------------
 
 unique(trainingSetDF$ave_sentiment)
