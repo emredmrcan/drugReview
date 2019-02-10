@@ -67,7 +67,7 @@ for (i in 1:length(drugNameDesc$DrugName)) {
 }
 
 #plot bar chart for first 10 tuples(The most popular conditions)
-barplot(conditionsDesc$Count[1:10], names = conditionsDesc$condition[1:10],
+barplot(conditionsDesc$Count[1:10], names = conditionsDesc$Condition[1:10],
         xlab = "Condition", ylab = "Count", col = rainbow(7),
         main = "Bar Chart")
 barplot(drugNameDesc$Count[1:10], names = drugNameDesc$DrugName[1:10],
